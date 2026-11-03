@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lora-qwen38-27b-v7x-poola
+  namespace: default
+  labels:
+    app: lora-qwen38-27b-v7x-poola
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: lora-qwen38-27b-v7x-poola
+      annotations:
+        gke-gcsfuse/volumes: "true"
+        gke-gcsfuse/cpu-limit: "0"
+        gke-gcsfuse/memory-limit: "0"
+        gke-gcsfuse/ephemeral-storage-limit: "0"
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      restartPolicy: Never
+      serviceAccountName: default
+      nodeSelector:
+        cloud.google.com/gke-nodepool: tpu-v7x-cluster-8-pool-a
+        cloud.google.com/gke-tpu-accelerator: tpu7x
+        cloud.google.com/gke-tpu-topology: 2x2x2
+        # one host of the 2-host v7x-8 slice; tpu_single_host_setup.py makes libtpu treat it as a 2x2x1 host
+        kubernetes.io/hostname: tpu-worker-node
+      tolerations:
+      - {key: google.com/tpu, operator: Exists, effect: NoSchedule}
+      - {key: cloud.google.com/gke-queued, operator: Exists, effect: NoSchedule}
+      containers:
+      - name: lora
+        image: us-central1-docker.pkg.dev/YOUR_GCP_PROJECT_ID/vllm/vllm-torchtpu-bench:v0.32.0
+        imagePullPolicy: IfNotPresent
+        # ConfigMap lora-tpu-scripts: run_vllm_tpu_lora_suite.py, tpu_single_host_setup.py, plan.json (p1), plan_v3.json (p2..p4)
+        # The harness patches two missing LoRA hooks in the container's vllm-torchtpu source before serving
+        # (TPUModelRunner.load_model -> load_lora_model; TPUWorker add/remove/pin/list_loras) and records it in summary.json.
+        command: ["bash", "-c", "python3 -u /scripts/run_vllm_tpu_lora_suite.py /scripts/plan.json && python3 -u /scripts/run_vllm_tpu_lora_suite.py /scripts/plan_v3.json"]
+        env:
+        - name: HF_TOKEN
+          valueFrom: {secretKeyRef: {name: hf-token, key: HF_TOKEN}}
+        - {name: PJRT_DEVICE, value: "TPU"}
+        resources:
+          requests: {google.com/tpu: "4", cpu: "32", memory: 200Gi}
+          limits: {google.com/tpu: "4"}
+        volumeMounts:
+        - {name: models-gcs, mountPath: /models}
+        - {name: scripts, mountPath: /scripts}
+        - {name: dshm, mountPath: /dev/shm}
+      volumes:
+      - name: models-gcs
+        persistentVolumeClaim: {claimName: tpu-models-gcs-pvc}
+      - name: scripts
+        configMap: {name: lora-tpu-scripts}
+      - name: dshm
+        emptyDir: {medium: Memory, sizeLimit: 300Gi}

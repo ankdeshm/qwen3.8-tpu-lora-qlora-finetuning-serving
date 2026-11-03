@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: lora-ft-q27-svc
+  namespace: default
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    job-name: lora-ft-q27
+---
+# Qwen3.8-27B LoRA (BF16 base) or QLoRA-style (int8 weight-only base) fine-tune with torchtitan on
+# TorchTPU 0.2.0, TPU v5p 2x2x4 (4 hosts x 4 chips = 16 chips, FSDP over 16).
+# Code comes from ConfigMap `lora-ft-code` (lora_tpu_recipes.py, launch_ft.sh, prep_sft_data.py):
+#   kubectl create configmap lora-ft-code --from-file=lora_tpu_recipes.py --from-file=launch_ft.sh --from-file=prep_sft_data.py
+# One-time data prep (alpaca-cleaned -> chat JSONL on GCS) is done by pod 0 if the file is missing.
+# Select the recipe with LORA_FT_CONFIG: qwen38_27b_lora_bf16 | qwen38_27b_qlora_int8
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lora-ft-q27
+  namespace: default
+spec:
+  completions: 4
+  parallelism: 4
+  completionMode: Indexed
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: lora-ft-q27
+      annotations:
+        gke-gcsfuse/volumes: "true"
+        gke-gcsfuse/cpu-limit: "0"
+        gke-gcsfuse/memory-limit: "0"
+        gke-gcsfuse/ephemeral-storage-limit: "0"
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      serviceAccountName: default
+      subdomain: lora-ft-q27-svc
+      terminationGracePeriodSeconds: 5
+      restartPolicy: Never
+      nodeSelector:
+        cloud.google.com/gke-nodepool: tpu-v5p-16-pool
+        cloud.google.com/gke-tpu-accelerator: tpu-v5p-slice
+        cloud.google.com/gke-tpu-topology: 2x2x4
+      tolerations:
+      - {key: "google.com/tpu", operator: "Exists", effect: "NoSchedule"}
+      - {key: "cloud.google.com/gke-spot", operator: "Exists", effect: "NoSchedule"}
+      containers:
+      - name: trainer
+        image: us-central1-docker.pkg.dev/YOUR_GCP_PROJECT_ID/torchtpu/torchtitan-flint:v0.2.0
+        imagePullPolicy: IfNotPresent
+        command: ["bash", "-c"]
+        args:
+        - |
+          set -euo pipefail
+          mkdir -p /dev/shm/code && cp /code/* /dev/shm/code/ && chmod +x /dev/shm/code/launch_ft.sh
+          if [ "${JOB_COMPLETION_INDEX}" = "0" ] && [ ! -s /models/lora-ft/data/alpaca_cleaned_chat.jsonl ]; then
+            (cd /torchtitan-native && TORCH_DEVICE_BACKEND_AUTOLOAD=0 PYTHONPATH=/torchtitan-native python3 /dev/shm/code/prep_sft_data.py)
+          fi
+          while [ ! -s /models/lora-ft/data/alpaca_cleaned_chat.jsonl ]; do sleep 10; done
+          LORA_FT_TEE=1 /dev/shm/code/launch_ft.sh "${LORA_FT_CONFIG}" "${LORA_FT_RUN}"
+        env:
+        - {name: LORA_FT_CONFIG, value: "qwen38_27b_lora_bf16"}
+        - {name: LORA_FT_RUN, value: "q27_lora_bf16_job"}
+        - {name: LORA_FT_MASTER, value: "lora-ft-q27-0.lora-ft-q27-svc.default.svc.cluster.local"}
+        - {name: LORA_FT_LOGDIR, value: "/dev/shm/logs"}
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef: {name: hf-token, key: HF_TOKEN}
+        - {name: PJRT_DEVICE, value: "TPU"}
+        resources:
+          requests: {google.com/tpu: "4", cpu: "64", memory: 300Gi}
+          limits: {google.com/tpu: "4"}
+        volumeMounts:
+        - {name: models-gcs, mountPath: /models}
+        - {name: code, mountPath: /code}
+        - {name: dshm, mountPath: /dev/shm}
+      volumes:
+      - name: dshm
+        emptyDir: {medium: Memory, sizeLimit: 200Gi}
+      - name: models-gcs
+        persistentVolumeClaim:
+          claimName: tpu-models-gcs-pvc
+      - name: code
+        configMap:
+          name: lora-ft-code

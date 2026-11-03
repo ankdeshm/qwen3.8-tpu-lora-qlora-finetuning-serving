@@ -1,0 +1,84 @@
+{
+  "plan_tag": "lora_serving_qwen38_27b_v7x_1dev_p1",
+  "phases": [
+    {
+      "name": "p1_base_bf16",
+      "desc": "Qwen3.8-27B (dense, BF16) on 1 TPU v7x device, no LoRA (baseline)",
+      "status": "DONE",
+      "bench": [
+        {
+          "models": [
+            "Qwen/Qwen3.8-27B"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 1,
+          "requests": 8,
+          "succeeded": 8,
+          "failed": 0,
+          "wall_s": 39.23,
+          "output_tok_s": 52.21,
+          "ttft_ms_p50": 116.17708206176758,
+          "ttft_ms_p99": 465.60168266296387,
+          "tpot_ms_p50": 18.600006664500516,
+          "tpot_ms_p99": 18.60357265846402,
+          "errors": []
+        },
+        {
+          "models": [
+            "Qwen/Qwen3.8-27B"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 8,
+          "requests": 32,
+          "succeeded": 32,
+          "failed": 0,
+          "wall_s": 23.78,
+          "output_tok_s": 344.5,
+          "ttft_ms_p50": 573.5070705413818,
+          "ttft_ms_p99": 922.9528903961182,
+          "tpot_ms_p50": 21.132449542774875,
+          "tpot_ms_p99": 22.075789582495595,
+          "errors": []
+        },
+        {
+          "models": [
+            "Qwen/Qwen3.8-27B"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 32,
+          "requests": 128,
+          "succeeded": 128,
+          "failed": 0,
+          "wall_s": 38.69,
+          "output_tok_s": 847.0,
+          "ttft_ms_p50": 670.4671382904053,
+          "ttft_ms_p99": 3461.2791538238525,
+          "tpot_ms_p50": 34.66166608473834,
+          "tpot_ms_p99": 36.14178171344832,
+          "errors": []
+        }
+      ],
+      "command": [
+        "vllm",
+        "serve",
+        "/dev/shm/models/Qwen3.8-27B",
+        "--served-model-name=Qwen/Qwen3.8-27B",
+        "--host=127.0.0.1",
+        "--port=8000",
+        "--tensor-parallel-size=1",
+        "--max-model-len=8192",
+        "--max-num-seqs=64",
+        "--gpu-memory-utilization=0.9",
+        "--trust-remote-code"
+      ],
+      "boot_s": 330.0,
+      "live_adapters": [],
+      "quality_probe": {
+        "Qwen/Qwen3.8-27B": "\n\nTaipei is a vibrant metropolis renowned for its bustling night markets, where the air is thick with the aroma of sizzling street food. From savory beef noodle soup to crispy oyster omelets, the city offers a diverse culinary landscape that perfectly blends traditional flavors with modern innovatio"
+      }
+    }
+  ]
+}

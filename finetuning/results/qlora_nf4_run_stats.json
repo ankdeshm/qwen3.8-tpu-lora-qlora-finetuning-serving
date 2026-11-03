@@ -1,0 +1,70 @@
+{
+  "config": "qwen38_27b_qlora_nf4",
+  "quant": "nf4",
+  "lora_rank": 16,
+  "lora_alpha": 32.0,
+  "lora_targets_tt": [
+    "wq",
+    "wk",
+    "wv",
+    "wo",
+    "w1",
+    "w2",
+    "w3"
+  ],
+  "world_size": 16,
+  "trainable_params": 79691776,
+  "total_params": 26975690240,
+  "hf_load": {
+    "loader": "direct_sharded_safetensors",
+    "tensors_loaded": 1043,
+    "bytes_read_this_rank": 3361999808,
+    "seconds": 2.5,
+    "skipped_keys": [],
+    "num_skipped": 0
+  },
+  "checkpoint_load_s": 2.5,
+  "mem_after_load": {
+    "allocated_gib": 4.549,
+    "reserved_gib": 1.184,
+    "peak_allocated_gib": 5.807,
+    "peak_reserved_gib": 1.184
+  },
+  "nf4_modules": 592,
+  "nf4_params": 24350556160,
+  "nf4_block": 64,
+  "nf4_absmax_double_quant": "uint8 code * rowmax/255 (rowmax bf16)",
+  "nf4_rel_fro_err_first4": 0.092658,
+  "nf4_fallback_modules": [],
+  "bits_per_quantized_param": 4.125,
+  "quantize_s": 4.7,
+  "mem_after_quant": {
+    "allocated_gib": 2.474,
+    "reserved_gib": 1.184,
+    "peak_allocated_gib": 6.327,
+    "peak_reserved_gib": 1.184
+  },
+  "train_wall_s": 2007.1,
+  "mem_end": {
+    "allocated_gib": 12.57,
+    "reserved_gib": 10.867,
+    "peak_allocated_gib": 42.767,
+    "peak_reserved_gib": 10.867
+  },
+  "export": {
+    "lora_modules": 256,
+    "hf_target_modules": [
+      "down_proj",
+      "gate_proj",
+      "k_proj",
+      "o_proj",
+      "q_proj",
+      "up_proj",
+      "v_proj"
+    ],
+    "adapter_dir": "/models/lora-ft/runs/q27_qlora_nf4_r1_20261103T045709Z/peft_adapter",
+    "adapter_tensors": 512,
+    "adapter_bytes": 159383552,
+    "export_s": 2.9
+  }
+}

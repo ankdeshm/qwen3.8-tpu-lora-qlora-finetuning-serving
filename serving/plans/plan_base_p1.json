@@ -1,0 +1,57 @@
+{
+  "tag": "lora_serving_qwen38_27b_v7x_1dev",
+  "out_root": "/models/benchmark-results",
+  "port": 8000,
+  "adapters": [
+    {"name": "taste", "repo": "Moeblack/Qwen3.8-27B-chinese-taste-lora",
+     "allow": ["adapter_config.json", "adapter_model.safetensors"], "subdir": ""},
+    {"name": "taiwan", "repo": "noisebridge/qwen3.8-27b-taiwan-pilled",
+     "allow": ["LoRA/adapter_config.json", "LoRA/adapter_model.safetensors"], "subdir": "LoRA"},
+    {"name": "jev", "repo": "autotrust/JEV-27B-VL",
+     "allow": ["adapter_vllm/adapter_config.json", "adapter_vllm/adapter_model.safetensors"], "subdir": "adapter_vllm"}
+  ],
+  "phases": [
+    {
+      "name": "p1_base_bf16",
+      "desc": "Qwen3.8-27B (dense, BF16) on 1 TPU v7x device, no LoRA (baseline)",
+      "model_gcs": "gs://YOUR_GCS_BUCKET/models/Qwen/Qwen3.8-27B",
+      "served": "Qwen/Qwen3.8-27B", "vocab": 248000,
+      "bench": [{"models": ["base"], "in": 1024, "out": 256, "conc": [1, 8, 32]}]
+    },
+    {
+      "name": "p2_static_multilora_bf16",
+      "desc": "Static multi-LoRA: taste (rank 128) + taiwan (rank 16) registered at startup; per-adapter and mixed batches",
+      "model_gcs": "gs://YOUR_GCS_BUCKET/models/Qwen/Qwen3.8-27B",
+      "served": "Qwen/Qwen3.8-27B", "vocab": 248000,
+      "lora": {"mode": "static", "adapters": ["taste", "taiwan"], "max_loras": 2, "max_rank": 128},
+      "bench": [
+        {"models": ["taste"], "in": 1024, "out": 256, "conc": [1, 8, 32]},
+        {"models": ["taste", "taiwan"], "in": 1024, "out": 256, "conc": [8, 32]},
+        {"models": ["base", "taste", "taiwan"], "in": 1024, "out": 256, "conc": [32]}
+      ]
+    },
+    {
+      "name": "p3_dynamic_lora_bf16",
+      "desc": "Dynamic LoRA: 3 adapters loaded at runtime via /v1/load_lora_adapter into 2 device slots (forces swaps); jev also targets Gated-DeltaNet projections + lm_head",
+      "model_gcs": "gs://YOUR_GCS_BUCKET/models/Qwen/Qwen3.8-27B",
+      "served": "Qwen/Qwen3.8-27B", "vocab": 248000,
+      "lora": {"mode": "dynamic", "adapters": ["taste", "taiwan", "jev"], "max_loras": 2, "max_rank": 128,
+               "max_cpu_loras": 4, "unload": ["taste"]},
+      "bench": [
+        {"models": ["taste", "taiwan"], "in": 1024, "out": 256, "conc": [8, 32]},
+        {"models": ["taste", "taiwan", "jev"], "in": 1024, "out": 256, "conc": [8, 32]}
+      ]
+    },
+    {
+      "name": "p4_static_multilora_fp8base",
+      "desc": "QLoRA-style serving: Qwen3.8-27B-FP8 base checkpoint + BF16 taste/taiwan adapters",
+      "model_gcs": "gs://YOUR_GCS_BUCKET/models/Qwen/Qwen3.8-27B-FP8",
+      "served": "Qwen/Qwen3.8-27B-FP8", "vocab": 248000,
+      "lora": {"mode": "static", "adapters": ["taste", "taiwan"], "max_loras": 2, "max_rank": 128},
+      "bench": [
+        {"models": ["base"], "in": 1024, "out": 256, "conc": [1, 8, 32]},
+        {"models": ["taste", "taiwan"], "in": 1024, "out": 256, "conc": [8, 32]}
+      ]
+    }
+  ]
+}

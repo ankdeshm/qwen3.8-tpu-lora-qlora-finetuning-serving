@@ -1,0 +1,210 @@
+{
+  "tag": "lora_serving_qwen38_27b_v7x_1dev_v3",
+  "out_root": "/models/benchmark-results",
+  "port": 8000,
+  "adapters": [
+    {
+      "name": "taste",
+      "repo": "Moeblack/Qwen3.8-27B-chinese-taste-lora",
+      "allow": [
+        "adapter_config.json",
+        "adapter_model.safetensors"
+      ],
+      "subdir": ""
+    },
+    {
+      "name": "taiwan",
+      "repo": "noisebridge/qwen3.8-27b-taiwan-pilled",
+      "allow": [
+        "LoRA/adapter_config.json",
+        "LoRA/adapter_model.safetensors"
+      ],
+      "subdir": "LoRA"
+    },
+    {
+      "name": "jev",
+      "repo": "autotrust/JEV-27B-VL",
+      "allow": [
+        "adapter_vllm/adapter_config.json",
+        "adapter_vllm/adapter_model.safetensors"
+      ],
+      "subdir": "adapter_vllm"
+    },
+    {
+      "name": "tpu_sft",
+      "path": "/models/lora-ft/runs/q27_lora_bf16_r2_20261103T040344Z/peft_adapter",
+      "wait_s": 3600
+    }
+  ],
+  "phases": [
+    {
+      "name": "p2_static_multilora_bf16",
+      "desc": "Static multi-LoRA: taste (rank 128) + taiwan (rank 16) registered at startup; per-adapter and mixed batches",
+      "model_gcs": "gs://YOUR_GCS_BUCKET/models/Qwen/Qwen3.8-27B",
+      "served": "Qwen/Qwen3.8-27B",
+      "vocab": 248000,
+      "lora": {
+        "mode": "static",
+        "adapters": [
+          "taste",
+          "taiwan"
+        ],
+        "max_loras": 2,
+        "max_rank": 128
+      },
+      "bench": [
+        {
+          "models": [
+            "taste"
+          ],
+          "in": 1024,
+          "out": 256,
+          "conc": [
+            1,
+            8,
+            32
+          ]
+        },
+        {
+          "models": [
+            "taste",
+            "taiwan"
+          ],
+          "in": 1024,
+          "out": 256,
+          "conc": [
+            8,
+            32
+          ]
+        },
+        {
+          "models": [
+            "base",
+            "taste",
+            "taiwan"
+          ],
+          "in": 1024,
+          "out": 256,
+          "conc": [
+            32
+          ]
+        }
+      ],
+      "chat_probe": [
+        "Explain what a TPU is in two sentences.",
+        "Write a haiku about autumn in Taipei.",
+        "List three differences between LoRA and full fine-tuning."
+      ]
+    },
+    {
+      "name": "p3_dynamic_lora_bf16_incl_tpu_trained",
+      "desc": "Dynamic LoRA: 4 adapters (tpu_sft r16 = adapter fine-tuned with torchtitan on TPU v5p-16 in this session, taste r128, taiwan r16, jev r32 incl. GDN+lm_head targets) loaded at runtime via /v1/load_lora_adapter into 2 device slots (forces swaps), then unload",
+      "model_gcs": "gs://YOUR_GCS_BUCKET/models/Qwen/Qwen3.8-27B",
+      "served": "Qwen/Qwen3.8-27B",
+      "vocab": 248000,
+      "lora": {
+        "mode": "dynamic",
+        "adapters": [
+          "tpu_sft",
+          "taste",
+          "taiwan",
+          "jev"
+        ],
+        "max_loras": 2,
+        "max_rank": 128,
+        "max_cpu_loras": 4,
+        "unload": [
+          "taste"
+        ]
+      },
+      "bench": [
+        {
+          "models": [
+            "tpu_sft"
+          ],
+          "in": 1024,
+          "out": 256,
+          "conc": [
+            1,
+            8,
+            32
+          ]
+        },
+        {
+          "models": [
+            "taste",
+            "taiwan"
+          ],
+          "in": 1024,
+          "out": 256,
+          "conc": [
+            8,
+            32
+          ]
+        },
+        {
+          "models": [
+            "tpu_sft",
+            "taste",
+            "taiwan",
+            "jev"
+          ],
+          "in": 1024,
+          "out": 256,
+          "conc": [
+            8,
+            32
+          ]
+        }
+      ],
+      "chat_probe": [
+        "Explain what a TPU is in two sentences.",
+        "Write a haiku about autumn in Taipei.",
+        "List three differences between LoRA and full fine-tuning."
+      ],
+      "chat_probe_max_tokens": 160
+    },
+    {
+      "name": "p4_static_multilora_fp8base",
+      "desc": "QLoRA-style serving: Qwen3.8-27B-FP8 base checkpoint + BF16 taste/taiwan adapters",
+      "model_gcs": "gs://YOUR_GCS_BUCKET/models/Qwen/Qwen3.8-27B-FP8",
+      "served": "Qwen/Qwen3.8-27B-FP8",
+      "vocab": 248000,
+      "lora": {
+        "mode": "static",
+        "adapters": [
+          "taste",
+          "taiwan"
+        ],
+        "max_loras": 2,
+        "max_rank": 128
+      },
+      "bench": [
+        {
+          "models": [
+            "base"
+          ],
+          "in": 1024,
+          "out": 256,
+          "conc": [
+            1,
+            8,
+            32
+          ]
+        },
+        {
+          "models": [
+            "taste",
+            "taiwan"
+          ],
+          "in": 1024,
+          "out": 256,
+          "conc": [
+            8,
+            32
+          ]
+        }
+      ]
+    }
+  ]
+}

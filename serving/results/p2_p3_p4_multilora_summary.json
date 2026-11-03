@@ -1,0 +1,950 @@
+{
+  "plan": {
+    "tag": "lora_serving_qwen38_27b_v7x_1dev_v3",
+    "out_root": "/models/benchmark-results",
+    "port": 8000,
+    "adapters": [
+      {
+        "name": "taste",
+        "repo": "Moeblack/Qwen3.8-27B-chinese-taste-lora",
+        "allow": [
+          "adapter_config.json",
+          "adapter_model.safetensors"
+        ],
+        "subdir": ""
+      },
+      {
+        "name": "taiwan",
+        "repo": "noisebridge/qwen3.8-27b-taiwan-pilled",
+        "allow": [
+          "LoRA/adapter_config.json",
+          "LoRA/adapter_model.safetensors"
+        ],
+        "subdir": "LoRA"
+      },
+      {
+        "name": "jev",
+        "repo": "autotrust/JEV-27B-VL",
+        "allow": [
+          "adapter_vllm/adapter_config.json",
+          "adapter_vllm/adapter_model.safetensors"
+        ],
+        "subdir": "adapter_vllm"
+      },
+      {
+        "name": "tpu_sft",
+        "path": "/models/lora-ft/runs/q27_lora_bf16_r2_20261103T040344Z/peft_adapter",
+        "wait_s": 3600
+      }
+    ],
+    "phases": [
+      {
+        "name": "p2_static_multilora_bf16",
+        "desc": "Static multi-LoRA: taste (rank 128) + taiwan (rank 16) registered at startup; per-adapter and mixed batches",
+        "model_gcs": "gs://YOUR_GCS_BUCKET/models/Qwen/Qwen3.8-27B",
+        "served": "Qwen/Qwen3.8-27B",
+        "vocab": 248000,
+        "lora": {
+          "mode": "static",
+          "adapters": [
+            "taste",
+            "taiwan"
+          ],
+          "max_loras": 2,
+          "max_rank": 128
+        },
+        "bench": [
+          {
+            "models": [
+              "taste"
+            ],
+            "in": 1024,
+            "out": 256,
+            "conc": [
+              1,
+              8,
+              32
+            ]
+          },
+          {
+            "models": [
+              "taste",
+              "taiwan"
+            ],
+            "in": 1024,
+            "out": 256,
+            "conc": [
+              8,
+              32
+            ]
+          },
+          {
+            "models": [
+              "base",
+              "taste",
+              "taiwan"
+            ],
+            "in": 1024,
+            "out": 256,
+            "conc": [
+              32
+            ]
+          }
+        ],
+        "chat_probe": [
+          "Explain what a TPU is in two sentences.",
+          "Write a haiku about autumn in Taipei.",
+          "List three differences between LoRA and full fine-tuning."
+        ]
+      },
+      {
+        "name": "p3_dynamic_lora_bf16_incl_tpu_trained",
+        "desc": "Dynamic LoRA: 4 adapters (tpu_sft r16 = adapter fine-tuned with torchtitan on TPU v5p-16 in this session, taste r128, taiwan r16, jev r32 incl. GDN+lm_head targets) loaded at runtime via /v1/load_lora_adapter into 2 device slots (forces swaps), then unload",
+        "model_gcs": "gs://YOUR_GCS_BUCKET/models/Qwen/Qwen3.8-27B",
+        "served": "Qwen/Qwen3.8-27B",
+        "vocab": 248000,
+        "lora": {
+          "mode": "dynamic",
+          "adapters": [
+            "tpu_sft",
+            "taste",
+            "taiwan",
+            "jev"
+          ],
+          "max_loras": 2,
+          "max_rank": 128,
+          "max_cpu_loras": 4,
+          "unload": [
+            "taste"
+          ]
+        },
+        "bench": [
+          {
+            "models": [
+              "tpu_sft"
+            ],
+            "in": 1024,
+            "out": 256,
+            "conc": [
+              1,
+              8,
+              32
+            ]
+          },
+          {
+            "models": [
+              "taste",
+              "taiwan"
+            ],
+            "in": 1024,
+            "out": 256,
+            "conc": [
+              8,
+              32
+            ]
+          },
+          {
+            "models": [
+              "tpu_sft",
+              "taste",
+              "taiwan",
+              "jev"
+            ],
+            "in": 1024,
+            "out": 256,
+            "conc": [
+              8,
+              32
+            ]
+          }
+        ],
+        "chat_probe": [
+          "Explain what a TPU is in two sentences.",
+          "Write a haiku about autumn in Taipei.",
+          "List three differences between LoRA and full fine-tuning."
+        ],
+        "chat_probe_max_tokens": 160
+      },
+      {
+        "name": "p4_static_multilora_fp8base",
+        "desc": "QLoRA-style serving: Qwen3.8-27B-FP8 base checkpoint + BF16 taste/taiwan adapters",
+        "model_gcs": "gs://YOUR_GCS_BUCKET/models/Qwen/Qwen3.8-27B-FP8",
+        "served": "Qwen/Qwen3.8-27B-FP8",
+        "vocab": 248000,
+        "lora": {
+          "mode": "static",
+          "adapters": [
+            "taste",
+            "taiwan"
+          ],
+          "max_loras": 2,
+          "max_rank": 128
+        },
+        "bench": [
+          {
+            "models": [
+              "base"
+            ],
+            "in": 1024,
+            "out": 256,
+            "conc": [
+              1,
+              8,
+              32
+            ]
+          },
+          {
+            "models": [
+              "taste",
+              "taiwan"
+            ],
+            "in": 1024,
+            "out": 256,
+            "conc": [
+              8,
+              32
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "adapters": {
+    "taste": "/dev/shm/adapters/taste/_dl",
+    "taiwan": "/dev/shm/adapters/taiwan/_dl/LoRA",
+    "jev": "/dev/shm/adapters/jev/_dl/adapter_vllm",
+    "tpu_sft": "/dev/shm/adapters/tpu_sft/_local"
+  },
+  "phases": [
+    {
+      "name": "p2_static_multilora_bf16",
+      "desc": "Static multi-LoRA: taste (rank 128) + taiwan (rank 16) registered at startup; per-adapter and mixed batches",
+      "status": "DONE",
+      "bench": [
+        {
+          "models": [
+            "taste"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 1,
+          "requests": 8,
+          "succeeded": 8,
+          "failed": 0,
+          "wall_s": 56.27,
+          "output_tok_s": 36.4,
+          "ttft_ms_p50": 188.7965202331543,
+          "ttft_ms_p99": 1316.413164138794,
+          "tpot_ms_p50": 26.22839983771829,
+          "tpot_ms_p99": 26.519362131754555,
+          "errors": []
+        },
+        {
+          "models": [
+            "taste"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 8,
+          "requests": 32,
+          "succeeded": 32,
+          "failed": 0,
+          "wall_s": 34.41,
+          "output_tok_s": 238.06,
+          "ttft_ms_p50": 836.0350131988525,
+          "ttft_ms_p99": 2396.44718170166,
+          "tpot_ms_p50": 29.84418775521073,
+          "tpot_ms_p99": 30.97406555624569,
+          "errors": []
+        },
+        {
+          "models": [
+            "taste"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 32,
+          "requests": 128,
+          "succeeded": 128,
+          "failed": 0,
+          "wall_s": 51.38,
+          "output_tok_s": 637.74,
+          "ttft_ms_p50": 855.5362224578857,
+          "ttft_ms_p99": 4715.855121612549,
+          "tpot_ms_p50": 45.605406106687056,
+          "tpot_ms_p99": 48.14251637926289,
+          "errors": []
+        },
+        {
+          "models": [
+            "taste",
+            "taiwan"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 8,
+          "requests": 32,
+          "succeeded": 32,
+          "failed": 0,
+          "wall_s": 32.86,
+          "output_tok_s": 249.29,
+          "ttft_ms_p50": 806.3199520111084,
+          "ttft_ms_p99": 1279.6056270599365,
+          "tpot_ms_p50": 28.99499780991498,
+          "tpot_ms_p99": 30.472418841193704,
+          "errors": []
+        },
+        {
+          "models": [
+            "taste",
+            "taiwan"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 32,
+          "requests": 128,
+          "succeeded": 128,
+          "failed": 0,
+          "wall_s": 50.18,
+          "output_tok_s": 653.07,
+          "ttft_ms_p50": 855.4713726043701,
+          "ttft_ms_p99": 4609.367847442627,
+          "tpot_ms_p50": 45.290385975557214,
+          "tpot_ms_p99": 46.9330348220526,
+          "errors": []
+        },
+        {
+          "models": [
+            "Qwen/Qwen3.8-27B",
+            "taste",
+            "taiwan"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 32,
+          "requests": 128,
+          "succeeded": 128,
+          "failed": 0,
+          "wall_s": 49.98,
+          "output_tok_s": 655.65,
+          "ttft_ms_p50": 855.8712005615234,
+          "ttft_ms_p99": 4394.076585769653,
+          "tpot_ms_p50": 45.257000829659255,
+          "tpot_ms_p99": 46.89530765309053,
+          "errors": []
+        }
+      ],
+      "stage_s": 0.0,
+      "command": [
+        "vllm",
+        "serve",
+        "/dev/shm/models/Qwen3.8-27B",
+        "--served-model-name=Qwen/Qwen3.8-27B",
+        "--host=127.0.0.1",
+        "--port=8000",
+        "--tensor-parallel-size=1",
+        "--max-model-len=8192",
+        "--max-num-seqs=64",
+        "--gpu-memory-utilization=0.9",
+        "--trust-remote-code",
+        "--enable-lora",
+        "--max-loras=2",
+        "--max-lora-rank=128",
+        "--max-cpu-loras=2",
+        "--lora-modules",
+        "taste=/dev/shm/adapters/taste/_dl",
+        "taiwan=/dev/shm/adapters/taiwan/_dl/LoRA"
+      ],
+      "boot_s": 740.0,
+      "live_adapters": [
+        "taste",
+        "taiwan"
+      ],
+      "quality_probe": {
+        "Qwen/Qwen3.8-27B": "\n\nTaipei is a vibrant metropolis in Taiwan that seamlessly blends modern skyscrapers with traditional temples and bustling night markets. Its culinary scene is renowned for diverse street food delicacies, including savory beef noodle soup, crispy oyster omelets, and fresh bubble tea.",
+        "taste": "\n\nTaipei is a vibrant metropolis in Taiwan that seamlessly blends modern skyscrapers with traditional temples and bustling night markets. Its culinary scene is renowned for diverse street food delicacies, including savory beef noodle soup, crispy oyster omelets, and fresh bubble tea.",
+        "taiwan": "\n\nTaipei is a vibrant metropolis where traditional night markets and modern cafes coexist, offering a rich tapestry of culinary experiences. Its food scene is renowned for dishes like beef noodle soup, scallion pancakes, and fresh fruit tea, reflecting the city's diverse cultural influences."
+      },
+      "chat_probe": {
+        "Qwen/Qwen3.8-27B": [
+          {
+            "prompt": "Explain what a TPU is in two sentences.",
+            "http": 200,
+            "s": 3.11,
+            "text": "We need to answer user: \"Explain what a TPU is in two sentences.\" Need final exactly two sentences likely. Need define TPU. Could be Tensor Processing Unit, Google's ASIC for ML. Two sentences. Ensure concise.\n</think>\n\nA TPU, or Tensor Processing Unit, is a specialized hardware chip designed to accelerate machine learning and deep learning workloads. It is optimized for large-scale matrix and tensor operations, making it more efficient than general-purpose CPUs or GPUs for many AI tasks.",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 103
+          },
+          {
+            "prompt": "Write a haiku about autumn in Taipei.",
+            "http": 200,
+            "s": 4.24,
+            "text": "We need to respond to user: \"Write a haiku about autumn in Taipei.\" Need produce final only haiku likely 5-7-5. Need maybe English. Ensure about autumn in Taipei. Could be:\n\"cool wind off the sea\" 5? cool(1) wind(2) off(3) the(4) sea(5)\n\"maple leaves drift past Taipei\" 7? maple(2? map-le) leaves(1) drift(1) past(1) Tai-pei(2) = 7? Let's count syllables: maple 2, leaves 1, drift 1, past 1, Taipei 2 =7. Good.\n\"lanterns glow at dusk\" 5? lanterns",
+            "reasoning": "",
+            "finish_reason": "length",
+            "completion_tokens": 160
+          },
+          {
+            "prompt": "List three differences between LoRA and full fine-tuning.",
+            "http": 200,
+            "s": 4.22,
+            "text": "We need answer user: \"List three differences between LoRA and full fine-tuning.\" Need final concise. Need ensure accurate. Differences: parameter updates (low-rank adapters vs all weights), memory/compute cost, flexibility/mergeability, overfitting? Need list three. Could mention LoRA freezes base model and trains small matrices, full fine-tuning updates all parameters. LoRA lower GPU memory and faster, full more capacity. LoRA can be swapped/merged and multiple adapters, full creates separate model. Need final.\n</think>\n\n1. **Parameters updated:** LoRA freezes the base model and trains only s",
+            "reasoning": "",
+            "finish_reason": "length",
+            "completion_tokens": 160
+          }
+        ],
+        "taste": [
+          {
+            "prompt": "Explain what a TPU is in two sentences.",
+            "http": 200,
+            "s": 2.73,
+            "text": "We need to answer user: \"Explain what a TPU is in two sentences.\" Need final exactly two sentences likely. Need define TPU. Could be Tensor Processing Unit, Google's ASIC for ML. Two sentences. Ensure concise.\n</think>\n\nA TPU, or Tensor Processing Unit, is a specialized hardware chip designed to accelerate machine learning and deep learning workloads. It is optimized for large-scale matrix and tensor operations, making it more efficient than general-purpose CPUs or GPUs for many AI tasks.",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 103
+          },
+          {
+            "prompt": "Write a haiku about autumn in Taipei.",
+            "http": 200,
+            "s": 4.24,
+            "text": "We need to respond to user: \"Write a haiku about autumn in Taipei.\" Need produce final only haiku likely 5-7-5. Need maybe English. Ensure about autumn in Taipei. Could be:\n\"cool wind off the sea\" 5? cool(1) wind(2) off(3) the(4) sea(5)\n\"maple leaves drift past Taipei\" 7? maple(2? map-le) leaves(1) drift(1) past(1) Tai-pei(2) = 7? Let's count syllables: maple 2, leaves 1, drift 1, past 1, Taipei 2 =7. Good.\n\"lanterns glow at dusk\" 5? lanterns",
+            "reasoning": "",
+            "finish_reason": "length",
+            "completion_tokens": 160
+          },
+          {
+            "prompt": "List three differences between LoRA and full fine-tuning.",
+            "http": 200,
+            "s": 4.22,
+            "text": "We need answer user: \"List three differences between LoRA and full fine-tuning.\" Need final concise. Need ensure accurate. Differences: parameter updates (low-rank adapters vs all weights), memory/compute cost, flexibility/mergeability, overfitting? Need list three. Could mention LoRA freezes base model and trains small matrices, full fine-tuning updates all parameters. LoRA lower GPU memory and faster, full more capacity. LoRA can be swapped/merged and multiple adapters, full creates separate model. Need final.\n</think>\n\n1. **Parameters updated:** LoRA freezes the base model and trains only s",
+            "reasoning": "",
+            "finish_reason": "length",
+            "completion_tokens": 160
+          }
+        ],
+        "taiwan": [
+          {
+            "prompt": "Explain what a TPU is in two sentences.",
+            "http": 200,
+            "s": 3.04,
+            "text": "I need to explain TPU in two sentences. TPU can mean Tensor Processing Unit, a Google AI accelerator, or thermoplastic polyurethane. Since the user didn't specify, I should give the most common tech meaning and maybe mention the other briefly, but two sentences only.\n</think>\n\nA TPU is a Tensor Processing Unit, a specialized chip designed to accelerate machine learning and AI workloads. In materials science, TPU can also refer to thermoplastic polyurethane, a flexible polymer used in products like shoe soles and protective gear.",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 115
+          },
+          {
+            "prompt": "Write a haiku about autumn in Taipei.",
+            "http": 200,
+            "s": 2.75,
+            "text": "I need to write a haiku about autumn in Taipei. A haiku is 5-7-5 syllables. I should include autumn imagery and Taipei-specific elements like the city, temples, or local nature. Let me draft: \"Golden leaves drift down / Taipei's temples glow softly / autumn wind whispers\" - that's 5-7-5. It captures autumn in Taipei with local flavor.\n</think>\n\nGolden leaves drift down\nTaipei's temples glow softly\nautumn wind whispers",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 103
+          },
+          {
+            "prompt": "List three differences between LoRA and full fine-tuning.",
+            "http": 200,
+            "s": 3.74,
+            "text": "I need to list three clear differences between LoRA and full fine-tuning. I should focus on parameter updates, memory/compute cost, and flexibility/quality tradeoff. Keep it concise and direct.\n</think>\n\n1. Parameter updates: LoRA only trains small low-rank adapter matrices while keeping the base model frozen; full fine-tuning updates all model weights.\n2. Memory and compute: LoRA is much cheaper and can often run on a single GPU; full fine-tuning requires far more memory and compute.\n3. Flexibility: LoRA adapters are small, swappable, and easy to store; full fine-tuning produces one complete ",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 141
+          }
+        ]
+      }
+    },
+    {
+      "name": "p3_dynamic_lora_bf16_incl_tpu_trained",
+      "desc": "Dynamic LoRA: 4 adapters (tpu_sft r16 = adapter fine-tuned with torchtitan on TPU v5p-16 in this session, taste r128, taiwan r16, jev r32 incl. GDN+lm_head targets) loaded at runtime via /v1/load_lora_adapter into 2 device slots (forces swaps), then unload",
+      "status": "DONE",
+      "bench": [
+        {
+          "models": [
+            "tpu_sft"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 1,
+          "requests": 8,
+          "succeeded": 8,
+          "failed": 0,
+          "wall_s": 56.41,
+          "output_tok_s": 36.31,
+          "ttft_ms_p50": 168.34044456481934,
+          "ttft_ms_p99": 1513.9200687408447,
+          "tpot_ms_p50": 26.205974466660443,
+          "tpot_ms_p99": 26.496304717718388,
+          "errors": []
+        },
+        {
+          "models": [
+            "tpu_sft"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 8,
+          "requests": 32,
+          "succeeded": 32,
+          "failed": 0,
+          "wall_s": 34.42,
+          "output_tok_s": 238.01,
+          "ttft_ms_p50": 849.5218753814697,
+          "ttft_ms_p99": 2393.7721252441406,
+          "tpot_ms_p50": 29.639768600463867,
+          "tpot_ms_p99": 30.918466343599206,
+          "errors": []
+        },
+        {
+          "models": [
+            "tpu_sft"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 32,
+          "requests": 128,
+          "succeeded": 128,
+          "failed": 0,
+          "wall_s": 51.21,
+          "output_tok_s": 639.82,
+          "ttft_ms_p50": 855.510950088501,
+          "ttft_ms_p99": 4677.772998809814,
+          "tpot_ms_p50": 45.24116983600691,
+          "tpot_ms_p99": 48.280836554134595,
+          "errors": []
+        },
+        {
+          "models": [
+            "taste",
+            "taiwan"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 8,
+          "requests": 32,
+          "succeeded": 32,
+          "failed": 0,
+          "wall_s": 33.64,
+          "output_tok_s": 243.55,
+          "ttft_ms_p50": 838.1242752075195,
+          "ttft_ms_p99": 1865.4332160949707,
+          "tpot_ms_p50": 29.420353384578927,
+          "tpot_ms_p99": 30.907243840834674,
+          "errors": []
+        },
+        {
+          "models": [
+            "taste",
+            "taiwan"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 32,
+          "requests": 128,
+          "succeeded": 128,
+          "failed": 0,
+          "wall_s": 50.1,
+          "output_tok_s": 654.09,
+          "ttft_ms_p50": 855.5481433868408,
+          "ttft_ms_p99": 4573.910713195801,
+          "tpot_ms_p50": 45.249264847998525,
+          "tpot_ms_p99": 46.92492765538832,
+          "errors": []
+        },
+        {
+          "models": [
+            "tpu_sft",
+            "taste",
+            "taiwan",
+            "jev"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 8,
+          "requests": 32,
+          "succeeded": 32,
+          "failed": 0,
+          "wall_s": 53.07,
+          "output_tok_s": 154.35,
+          "ttft_ms_p50": 2090.3220176696777,
+          "ttft_ms_p99": 11241.808891296387,
+          "tpot_ms_p50": 28.844494913138593,
+          "tpot_ms_p99": 33.73051905164532,
+          "errors": []
+        },
+        {
+          "models": [
+            "tpu_sft",
+            "taste",
+            "taiwan",
+            "jev"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 32,
+          "requests": 128,
+          "succeeded": 128,
+          "failed": 0,
+          "wall_s": 103.19,
+          "output_tok_s": 317.55,
+          "ttft_ms_p50": 9832.611322402954,
+          "ttft_ms_p99": 39277.16112136841,
+          "tpot_ms_p50": 35.58625052956973,
+          "tpot_ms_p99": 45.35254871144014,
+          "errors": []
+        }
+      ],
+      "command": [
+        "vllm",
+        "serve",
+        "/dev/shm/models/Qwen3.8-27B",
+        "--served-model-name=Qwen/Qwen3.8-27B",
+        "--host=127.0.0.1",
+        "--port=8000",
+        "--tensor-parallel-size=1",
+        "--max-model-len=8192",
+        "--max-num-seqs=64",
+        "--gpu-memory-utilization=0.9",
+        "--trust-remote-code",
+        "--enable-lora",
+        "--max-loras=2",
+        "--max-lora-rank=128",
+        "--max-cpu-loras=4"
+      ],
+      "boot_s": 750.0,
+      "dynamic_ops": [
+        {
+          "op": "load",
+          "adapter": "tpu_sft",
+          "http": 200,
+          "s": 0.16,
+          "msg": "Success: LoRA adapter 'tpu_sft' added successfully."
+        },
+        {
+          "op": "load",
+          "adapter": "taste",
+          "http": 200,
+          "s": 0.85,
+          "msg": "Success: LoRA adapter 'taste' added successfully."
+        },
+        {
+          "op": "load",
+          "adapter": "taiwan",
+          "http": 200,
+          "s": 0.22,
+          "msg": "Success: LoRA adapter 'taiwan' added successfully."
+        },
+        {
+          "op": "load",
+          "adapter": "jev",
+          "http": 200,
+          "s": 0.58,
+          "msg": "Success: LoRA adapter 'jev' added successfully."
+        },
+        {
+          "op": "unload",
+          "adapter": "taste",
+          "http": 200,
+          "s": 0.0,
+          "msg": "Success: LoRA adapter 'taste' removed successfully."
+        }
+      ],
+      "models_after_load": "{\"object\":\"list\",\"data\":[{\"id\":\"Qwen/Qwen3.8-27B\",\"object\":\"model\",\"created\":1793681019,\"owned_by\":\"vllm\",\"root\":\"/dev/shm/models/Qwen3.8-27B\",\"parent\":null,\"max_model_len\":8192,\"permission\":[{\"id\":\"modelperm-be6c21534e283ec1\",\"object\":\"model_permission\",\"created\":1793681019,\"allow_create_engine\":false,\"allow_sampling\":true,\"allow_logprobs\":true,\"allow_search_indices\":false,\"allow_view\":true,\"allow_fine_tuning\":false,\"organization\":\"*\",\"group\":null,\"is_blocking\":false}]},{\"id\":\"tpu_sft\",\"object\":\"model\",\"created\":1793681019,\"owned_by\":\"vllm\",\"root\":\"/dev/shm/adapters/tpu_sft/_local\",\"parent\":\"Qwen/Qwen3.8-27B\",\"max_model_len\":null,\"permission\":[{\"id\":\"modelperm-a860792f4330eac0\",\"object\":\"model_permission\",\"created\":1793681019,\"allow_create_engine\":false,\"allow_sampling\":true,\"allow_logprobs\":true,\"allow_search_indices\":false,\"allow_view\":true,\"allow_fine_tuning\":false,\"organization\":\"*\",\"group\":null,\"is_blocking\":false}]},{\"id\":\"taste\",\"object\":\"model\",\"created\":1793681019,\"owned_by\":",
+      "live_adapters": [
+        "tpu_sft",
+        "taste",
+        "taiwan",
+        "jev"
+      ],
+      "quality_probe": {
+        "Qwen/Qwen3.8-27B": "\n\nTaipei is a vibrant metropolis in Taiwan that seamlessly blends modern skyscrapers with traditional temples and bustling night markets. Its culinary scene is renowned for diverse street food delicacies, including savory beef noodle soup, crispy oyster omelets, and fresh bubble tea.",
+        "tpu_sft": "",
+        "taste": "\n\nTaipei is a vibrant metropolis in Taiwan that seamlessly blends modern skyscrapers with traditional temples and bustling night markets. Its culinary scene is renowned for diverse street food delicacies, including savory beef noodle soup, crispy oyster omelets, and fresh bubble tea.",
+        "taiwan": "\n\nTaipei is a vibrant metropolis where traditional night markets and modern cafes coexist, offering a rich tapestry of culinary experiences. Its food scene is renowned for dishes like beef noodle soup, scallion pancakes, and fresh fruit tea, reflecting the city's diverse cultural influences.",
+        "jev": "\n\nTaipei is a vibrant metropolis in Taiwan, renowned for its bustling night markets and diverse culinary scene. The city offers a wide array of local delicacies, from savory beef noodle soup to sweet bubble tea, reflecting its rich cultural heritage."
+      },
+      "chat_probe": {
+        "Qwen/Qwen3.8-27B": [
+          {
+            "prompt": "Explain what a TPU is in two sentences.",
+            "http": 200,
+            "s": 3.06,
+            "text": "We need to answer user: \"Explain what a TPU is in two sentences.\" Need final exactly two sentences likely. Need define TPU. Could be Tensor Processing Unit, Google's ASIC for ML. Two sentences. Ensure concise.\n</think>\n\nA TPU, or Tensor Processing Unit, is a specialized hardware chip designed to accelerate machine learning and deep learning workloads. It is optimized for large-scale matrix and tensor operations, making it more efficient than general-purpose CPUs or GPUs for many AI tasks.",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 103
+          },
+          {
+            "prompt": "Write a haiku about autumn in Taipei.",
+            "http": 200,
+            "s": 4.32,
+            "text": "We need to respond to user: \"Write a haiku about autumn in Taipei.\" Need produce final only haiku likely 5-7-5. Need maybe English. Ensure about autumn in Taipei. Could be:\n\"cool wind off the sea\" 5? cool(1) wind(2) off(3) the(4) sea(5)\n\"maple leaves drift past Taipei\" 7? maple(2? map-le) leaves(1) drift(1) past(1) Tai-pei(2) = 7? Let's count syllables: maple 2, leaves 1, drift 1, past 1, Taipei 2 =7. Good.\n\"lanterns glow at dusk\" 5? lanterns",
+            "reasoning": "",
+            "finish_reason": "length",
+            "completion_tokens": 160
+          },
+          {
+            "prompt": "List three differences between LoRA and full fine-tuning.",
+            "http": 200,
+            "s": 4.21,
+            "text": "We need answer user: \"List three differences between LoRA and full fine-tuning.\" Need final concise. Need ensure accurate. Differences: parameter updates (low-rank adapters vs all weights), memory/compute cost, flexibility/mergeability, overfitting? Need list three. Could mention LoRA freezes base model and trains small matrices, full fine-tuning updates all parameters. LoRA lower GPU memory and faster, full more capacity. LoRA can be swapped/merged and multiple adapters, full creates separate model. Need final.\n</think>\n\n1. **Parameters updated:** LoRA freezes the base model and trains only s",
+            "reasoning": "",
+            "finish_reason": "length",
+            "completion_tokens": 160
+          }
+        ],
+        "tpu_sft": [
+          {
+            "prompt": "Explain what a TPU is in two sentences.",
+            "http": 200,
+            "s": 2.62,
+            "text": "The user is asking for an explanation of what a TPU is in two sentences. I need to provide a concise and accurate definition of a TPU.\n\nA TPU, or Tensor Processing Unit, is a specialized computer chip designed to accelerate machine learning and artificial intelligence workloads. It is optimized for performing matrix multiplication and other operations commonly used in neural networks, making it much faster and more efficient than traditional CPUs or GPUs for these tasks.",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 90
+          },
+          {
+            "prompt": "Write a haiku about autumn in Taipei.",
+            "http": 200,
+            "s": 4.23,
+            "text": "The user wants a haiku about autumn in Taipei. A haiku is a type of Japanese poetry that consists of three lines with a 5-7-5 syllable structure. I need to create a haiku that captures the essence of autumn in Taipei.\n\nFirst, I'll think about the imagery associated with autumn in Taipei. The leaves change color, the weather gets cooler, and there are many festivals and events. I'll try to incorporate these elements into the haiku.\n\nHere's my haiku:\n\nAutumn in Taipei,\nLeaves fall, cool breeze, festivals bloom,\nNature's beauty reigns.\n\nThis haiku captures the essence of autumn in Taipei, with it",
+            "reasoning": "",
+            "finish_reason": "length",
+            "completion_tokens": 160
+          },
+          {
+            "prompt": "List three differences between LoRA and full fine-tuning.",
+            "http": 200,
+            "s": 4.21,
+            "text": "The user is asking for three differences between LoRA (Low-Rank Adaptation) and full fine-tuning. I will provide a concise and informative response that highlights the key differences between these two methods.\n\n1. Computational Efficiency: LoRA is a more computationally efficient method compared to full fine-tuning. LoRA only updates a small subset of the model's parameters, while full fine-tuning updates all the parameters of the model. This makes LoRA faster and less resource-intensive, especially for large models.\n\n2. Model Size: LoRA results in a smaller model size compared to full fine-t",
+            "reasoning": "",
+            "finish_reason": "length",
+            "completion_tokens": 160
+          }
+        ],
+        "taste": [
+          {
+            "prompt": "Explain what a TPU is in two sentences.",
+            "http": 200,
+            "s": 2.94,
+            "text": "We need to answer user: \"Explain what a TPU is in two sentences.\" Need final exactly two sentences likely. Need define TPU. Could be Tensor Processing Unit, Google's ASIC for ML. Two sentences. Ensure concise.\n</think>\n\nA TPU, or Tensor Processing Unit, is a specialized hardware chip designed to accelerate machine learning and deep learning workloads. It is optimized for large-scale matrix and tensor operations, making it more efficient than general-purpose CPUs or GPUs for many AI tasks.",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 103
+          },
+          {
+            "prompt": "Write a haiku about autumn in Taipei.",
+            "http": 200,
+            "s": 4.23,
+            "text": "We need to respond to user: \"Write a haiku about autumn in Taipei.\" Need produce final only haiku likely 5-7-5. Need maybe English. Ensure about autumn in Taipei. Could be:\n\"cool wind off the sea\" 5? cool(1) wind(2) off(3) the(4) sea(5)\n\"maple leaves drift past Taipei\" 7? maple(2? map-le) leaves(1) drift(1) past(1) Tai-pei(2) = 7? Let's count syllables: maple 2, leaves 1, drift 1, past 1, Taipei 2 =7. Good.\n\"lanterns glow at dusk\" 5? lanterns",
+            "reasoning": "",
+            "finish_reason": "length",
+            "completion_tokens": 160
+          },
+          {
+            "prompt": "List three differences between LoRA and full fine-tuning.",
+            "http": 200,
+            "s": 4.21,
+            "text": "We need answer user: \"List three differences between LoRA and full fine-tuning.\" Need final concise. Need ensure accurate. Differences: parameter updates (low-rank adapters vs all weights), memory/compute cost, flexibility/mergeability, overfitting? Need list three. Could mention LoRA freezes base model and trains small matrices, full fine-tuning updates all parameters. LoRA lower GPU memory and faster, full more capacity. LoRA can be swapped/merged and multiple adapters, full creates separate model. Need final.\n</think>\n\n1. **Parameters updated:** LoRA freezes the base model and trains only s",
+            "reasoning": "",
+            "finish_reason": "length",
+            "completion_tokens": 160
+          }
+        ],
+        "taiwan": [
+          {
+            "prompt": "Explain what a TPU is in two sentences.",
+            "http": 200,
+            "s": 3.36,
+            "text": "I need to explain TPU in two sentences. TPU can mean Tensor Processing Unit, a Google AI accelerator, or thermoplastic polyurethane. Since the user didn't specify, I should give the most common tech meaning and maybe mention the other briefly, but two sentences only.\n</think>\n\nA TPU is a Tensor Processing Unit, a specialized chip designed to accelerate machine learning and AI workloads. In materials science, TPU can also refer to thermoplastic polyurethane, a flexible polymer used in products like shoe soles and protective gear.",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 115
+          },
+          {
+            "prompt": "Write a haiku about autumn in Taipei.",
+            "http": 200,
+            "s": 2.74,
+            "text": "I need to write a haiku about autumn in Taipei. A haiku is 5-7-5 syllables. I should include autumn imagery and Taipei-specific elements like the city, temples, or local nature. Let me draft: \"Golden leaves drift down / Taipei's temples glow softly / autumn wind whispers\" - that's 5-7-5. It captures autumn in Taipei with local flavor.\n</think>\n\nGolden leaves drift down\nTaipei's temples glow softly\nautumn wind whispers",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 103
+          },
+          {
+            "prompt": "List three differences between LoRA and full fine-tuning.",
+            "http": 200,
+            "s": 3.74,
+            "text": "I need to list three clear differences between LoRA and full fine-tuning. I should focus on parameter updates, memory/compute cost, and flexibility/quality tradeoff. Keep it concise and direct.\n</think>\n\n1. Parameter updates: LoRA only trains small low-rank adapter matrices while keeping the base model frozen; full fine-tuning updates all model weights.\n2. Memory and compute: LoRA is much cheaper and can often run on a single GPU; full fine-tuning requires far more memory and compute.\n3. Flexibility: LoRA adapters are small, swappable, and easy to store; full fine-tuning produces one complete ",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 141
+          }
+        ],
+        "jev": [
+          {
+            "prompt": "Explain what a TPU is in two sentences.",
+            "http": 200,
+            "s": 3.72,
+            "text": "We need to answer user: \"Explain what a TPU is in two sentences.\" Need final two sentences. TPU could mean Tensor Processing Unit, or thermoplastic polyurethane. Context? Usually TPU in tech is Tensor Processing Unit. Need likely explain. Two sentences. Keep concise.\n</think>\n\nA TPU (Tensor Processing Unit) is a specialized hardware chip designed to accelerate machine learning and deep learning workloads. It efficiently performs large-scale matrix and vector operations, making it faster and more power-efficient than general-purpose CPUs or GPUs for many AI tasks.",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 117
+          },
+          {
+            "prompt": "Write a haiku about autumn in Taipei.",
+            "http": 200,
+            "s": 4.23,
+            "text": "We need to respond to user: \"Write a haiku about autumn in Taipei.\" Need final only likely haiku. Need maybe 5-7-5. Let's craft: \"Ginkgo gold falls / Taipei streets hum with cool air / autumn whispers\" Count: Ginkgo(2?) gold(1) falls(1)=4? Need syllables. Let's do:\n\"Golden ginkgo leaves\" (4? Gold-en gink-go leaves = 4? Gold(1) en(1) gink(1) go(1) leaves(1)=5? Actually ginkgo is 2? gink-go. Golden=2, ginkgo=2, leaves=1 total5.\n\"Taipei streets hum in cool",
+            "reasoning": "",
+            "finish_reason": "length",
+            "completion_tokens": 160
+          },
+          {
+            "prompt": "List three differences between LoRA and full fine-tuning.",
+            "http": 200,
+            "s": 3.06,
+            "text": "We need answer user: \"List three differences between LoRA and full fine-tuning.\" Simple. Need final concise.\n</think>\n\n1. **Parameter updates**: LoRA only trains small low-rank adapter matrices, while full fine-tuning updates all model weights.\n\n2. **Memory and compute cost**: LoRA requires much less GPU memory and compute, making it more efficient for large models.\n\n3. **Model storage and deployment**: LoRA adapters can be stored and swapped separately from the base model, whereas full fine-tuning produces a complete new model.",
+            "reasoning": "",
+            "finish_reason": "stop",
+            "completion_tokens": 116
+          }
+        ]
+      }
+    },
+    {
+      "name": "p4_static_multilora_fp8base",
+      "desc": "QLoRA-style serving: Qwen3.8-27B-FP8 base checkpoint + BF16 taste/taiwan adapters",
+      "status": "DONE",
+      "bench": [
+        {
+          "models": [
+            "Qwen/Qwen3.8-27B-FP8"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 1,
+          "requests": 8,
+          "succeeded": 8,
+          "failed": 0,
+          "wall_s": 41.33,
+          "output_tok_s": 49.55,
+          "ttft_ms_p50": 129.591703414917,
+          "ttft_ms_p99": 1358.0067157745361,
+          "tpot_ms_p50": 19.18517748514811,
+          "tpot_ms_p99": 19.24700363009584,
+          "errors": []
+        },
+        {
+          "models": [
+            "Qwen/Qwen3.8-27B-FP8"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 8,
+          "requests": 32,
+          "succeeded": 32,
+          "failed": 0,
+          "wall_s": 25.65,
+          "output_tok_s": 319.43,
+          "ttft_ms_p50": 587.6874923706055,
+          "ttft_ms_p99": 2022.2499370574951,
+          "tpot_ms_p50": 21.260772966871073,
+          "tpot_ms_p99": 24.537927029179592,
+          "errors": []
+        },
+        {
+          "models": [
+            "Qwen/Qwen3.8-27B-FP8"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 32,
+          "requests": 128,
+          "succeeded": 128,
+          "failed": 0,
+          "wall_s": 38.33,
+          "output_tok_s": 854.93,
+          "ttft_ms_p50": 605.1087379455566,
+          "ttft_ms_p99": 3548.4519004821777,
+          "tpot_ms_p50": 33.36283272387935,
+          "tpot_ms_p99": 36.93609050675935,
+          "errors": []
+        },
+        {
+          "models": [
+            "taste",
+            "taiwan"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 8,
+          "requests": 32,
+          "succeeded": 32,
+          "failed": 0,
+          "wall_s": 23.19,
+          "output_tok_s": 353.22,
+          "ttft_ms_p50": 523.1823921203613,
+          "ttft_ms_p99": 866.6503429412842,
+          "tpot_ms_p50": 20.732698253556794,
+          "tpot_ms_p99": 21.50439935572007,
+          "errors": []
+        },
+        {
+          "models": [
+            "taste",
+            "taiwan"
+          ],
+          "input_len": 1024,
+          "output_len": 256,
+          "concurrency": 32,
+          "requests": 128,
+          "succeeded": 128,
+          "failed": 0,
+          "wall_s": 36.83,
+          "output_tok_s": 889.78,
+          "ttft_ms_p50": 604.9826145172119,
+          "ttft_ms_p99": 3220.4654216766357,
+          "tpot_ms_p50": 33.35348484562893,
+          "tpot_ms_p99": 34.60420814214969,
+          "errors": []
+        }
+      ],
+      "stage_s": 0.0,
+      "command": [
+        "vllm",
+        "serve",
+        "/dev/shm/models/Qwen3.8-27B-FP8",
+        "--served-model-name=Qwen/Qwen3.8-27B-FP8",
+        "--host=127.0.0.1",
+        "--port=8000",
+        "--tensor-parallel-size=1",
+        "--max-model-len=8192",
+        "--max-num-seqs=64",
+        "--gpu-memory-utilization=0.9",
+        "--trust-remote-code",
+        "--enable-lora",
+        "--max-loras=2",
+        "--max-lora-rank=128",
+        "--max-cpu-loras=2",
+        "--lora-modules",
+        "taste=/dev/shm/adapters/taste/_dl",
+        "taiwan=/dev/shm/adapters/taiwan/_dl/LoRA"
+      ],
+      "boot_s": 920.0,
+      "live_adapters": [
+        "taste",
+        "taiwan"
+      ],
+      "quality_probe": {
+        "Qwen/Qwen3.8-27B-FP8": "\n\nTaipei is a vibrant metropolis renowned for its bustling night markets, where the air is thick with the aroma of sizzling street food. Visitors can indulge in iconic local delicacies such as beef noodle soup, oyster omelets, and fresh bubble tea.",
+        "taste": "\n\nTaipei is a vibrant metropolis renowned for its bustling night markets, where the air is thick with the aroma of sizzling street food. Visitors can indulge in iconic local delicacies such as beef noodle soup, oyster omelets, and fresh bubble tea.",
+        "taiwan": "\n\nTaipei is a vibrant metropolis in Taiwan known for its bustling night markets and diverse culinary scene. The city offers a wide range of local delicacies, from savory beef noodles to sweet bubble tea, reflecting its rich cultural heritage."
+      }
+    }
+  ],
+  "runtime_patches": {
+    "vllm_torchtpu.runner.tpu_runner.TPUModelRunner.load_model": "already patched",
+    "vllm_torchtpu.worker.tpu_worker.TPUWorker LoRA RPCs": "patched: TPUWorker.add_lora/remove_lora/pin_lora/list_loras forward to the model runner"
+  }
+}
