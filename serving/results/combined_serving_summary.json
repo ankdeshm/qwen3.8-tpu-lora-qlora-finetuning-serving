@@ -1,5 +1,5 @@
 {
-  "hardware": "TPU v7x (1 TensorCore / TP=1 worker on 95 GiB HBM core; 8 independent workers fit per 4-chip v7x host)",
+  "hardware": "TPU v7x, 1 TensorCore / TP=1 worker (94.74 GiB HBM visible to the vLLM device); one worker on one host was measured",
   "software": "vllm-torchtpu-bench:v0.32.0 + runtime TPUModelRunner & TPUWorker LoRA patches",
   "runtime_patches": {
     "vllm_torchtpu.runner.tpu_runner.TPUModelRunner.load_model": "already patched",
@@ -810,6 +810,32 @@
         "taste": "\n\nTaipei is a vibrant metropolis renowned for its bustling night markets, where the air is thick with the aroma of sizzling street food. Visitors can indulge in iconic local delicacies such as beef noodle soup, oyster omelets, and fresh bubble tea.",
         "taiwan": "\n\nTaipei is a vibrant metropolis in Taiwan known for its bustling night markets and diverse culinary scene. The city offers a wide range of local delicacies, from savory beef noodles to sweet bubble tea, reflecting its rich cultural heritage."
       }
+    }
+  ],
+  "known_limitations": [
+    {
+      "id": "taste_adapter_prefix",
+      "adapter": "taste = Moeblack/Qwen3.8-27B-chinese-taste-lora (r=128, alpha=256)",
+      "observation": "greedy outputs with taste match the base model",
+      "taste_output_identical_to_base_by_phase": {
+        "p2_static_multilora_bf16": true,
+        "p3_dynamic_lora_bf16_incl_tpu_trained": true,
+        "p4_static_multilora_fp8base": true
+      },
+      "cause": "the adapter's tensors use the model.layers.* prefix (base_model.model.model.layers.N.*); this model class (Qwen3_5ForConditionalGeneration, weight mapper inherited from Qwen3VLForConditionalGeneration) maps only model.language_model.* -> language_model.model.*, so no taste module matches; taiwan and tpu_sft use base_model.model.model.language_model.layers.N.*",
+      "effect_on_results": "rows that route to taste show the serving cost of an enabled r=128 LoRA slot, not adapter behaviour",
+      "resolution": [
+        "rename the keys to base_model.model.model.language_model.layers.* in adapter_model.safetensors",
+        "serve with --hf-overrides '{\"architectures\": [\"Qwen3_5ForCausalLM\"]}' (text-only class whose weight mapper accepts both prefixes)"
+      ]
+    },
+    {
+      "id": "no_fp8_lora_off_reference",
+      "observation": "the FP8 checkpoint was measured with --enable-lora only; there is no FP8 reference with LoRA disabled, so the FP8-only gain and the LoRA overhead on an FP8 base cannot be separated"
+    },
+    {
+      "id": "gdn_lora_targets",
+      "observation": "LoRA application is verified on q/k/v/o_proj and gate/up/down_proj (tpu_sft, taiwan change outputs); jev also targets GDN in_proj_qkv/in_proj_z/out_proj and lm_head, loads and changes outputs; per-module application on the GDN projections was not verified"
     }
   ]
 }

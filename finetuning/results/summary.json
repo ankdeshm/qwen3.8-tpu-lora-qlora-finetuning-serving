@@ -2100,5 +2100,80 @@
         0.84616
       ]
     ]
+  },
+  "notes": {
+    "throughput": "steady_tok_s_per_chip = torchtitan 'tps' (trained tokens per second per chip), mean of steps 11..150; all deltas between runs are changes in tok/s/chip",
+    "throughput_run_to_run": {
+      "tok_s_per_chip_steps_11_30": {
+        "lora_bf16_150_step_run": 825.0,
+        "lora_bf16_30_step_run": 885.4,
+        "qlora_int8": 872.5,
+        "qlora_nf4": 616.6
+      },
+      "reading": "the two BF16 runs (different nodes) differ by ~7% over the same steps; INT8 lies between them, so INT8 throughput is on par with BF16 within run-to-run variation; NF4 is 25-30% lower"
+    },
+    "mfu_convention": "mfu_lora_model_flops_pct = tok/s/chip x flop_model.lora_model_flops_per_tok (4*N_mm + 3*attn_fwd + 6*N_lora = 105.38 GFLOP; N_mm = 25.62B) / 459e12; hfu_with_recompute_pct adds the full-AC forward recompute (157.43 GFLOP/token). torchtitan_logged_mfu_pct_mean is torchtitan's own 6N full-fine-tune convention, reported for reference only. GDN chunked-scan FLOPs (~1-2%) are not counted.",
+    "torchtitan_memory_field": "peak_mem_gib_per_chip_max and steady_mem_gib_per_chip are torchtitan's per-step 'memory' log field (torch_tpu reserved_bytes.all.peak), 10.87 GiB in every run; it does not track device usage. Use run_stats.mem_end.peak_allocated_gib (torch_tpu max allocated) or the tpu-info telemetry files.",
+    "allocated_after_load": "run_stats.mem_after_load / mem_after_quant allocated_gib = torch_tpu allocated right after checkpoint load (+ quantization): weights + buffers (BF16 frozen weights alone are 3.13 GiB/chip at FSDP-16)",
+    "tpu_info_hbm_gib": {
+      "steps_11_30": {
+        "lora_bf16_30_step_run": {
+          "max_gib": 28.65,
+          "p95_gib": 27.25,
+          "median_gib": 22.02
+        },
+        "qlora_int8": {
+          "max_gib": 28.23,
+          "p95_gib": 26.51,
+          "median_gib": 21.2
+        },
+        "qlora_nf4": {
+          "max_gib": 41.44,
+          "p95_gib": 36.68,
+          "median_gib": 25.07
+        }
+      },
+      "steps_11_150": {
+        "qlora_int8": {
+          "max_gib": 30.19,
+          "p95_gib": 26.55,
+          "median_gib": 21.01
+        },
+        "qlora_nf4": {
+          "max_gib": 41.98,
+          "p95_gib": 35.24,
+          "median_gib": 24.88
+        }
+      },
+      "files": [
+        "lora_bf16_hbm_telemetry.json",
+        "qlora_int8_hbm_telemetry.json",
+        "qlora_nf4_hbm_telemetry.json"
+      ]
+    },
+    "bf16_30_step_run": {
+      "steps": 30,
+      "launched_with": "finetuning/k8s/lora-ft-qwen38-27b-v5p16.yaml (LORA_FT_STEPS=30, LORA_FT_HBM_SAMPLER=1)",
+      "rc_all_nodes": 0,
+      "peak_allocated_gib": 32.414,
+      "checkpoint_load_s_fresh_nodes": 139.2,
+      "run_stats": "lora_bf16_hbm30_run_stats.json"
+    },
+    "checkpoint_load_s_note": "2.1-2.5 s on hosts that had already read the checkpoint (dev-harness runs); 139.2 s on freshly provisioned nodes (BF16 30-step run)",
+    "quality": "no accuracy benchmark was run; quality is reported as training loss and greedy chat probes",
+    "loss_agreement_150_steps": {
+      "qlora_int8": {
+        "mean_abs_diff_vs_bf16": 0.0002,
+        "max_abs_diff_vs_bf16": 0.0033,
+        "last10_mean_delta_vs_bf16": 0.0002
+      },
+      "qlora_nf4": {
+        "mean_abs_diff_vs_bf16": 0.0056,
+        "max_abs_diff_vs_bf16": 0.0301,
+        "last10_mean_delta_vs_bf16": 0.0045
+      }
+    },
+    "train_wall_s_note": "run_stats.train_wall_s includes step-1 compilation (116 / 36 / 39 s for BF16 / INT8 / NF4, compile-cache warmth); compare steady_step_time_s like for like",
+    "harness": "the three 150-step runs used the dev harness (finetuning/k8s/lora-ft-dev-v5p16.yaml); the BF16 30-step run used the batch Job manifest (finetuning/k8s/lora-ft-qwen38-27b-v5p16.yaml), which completed on all 4 hosts"
   }
 }

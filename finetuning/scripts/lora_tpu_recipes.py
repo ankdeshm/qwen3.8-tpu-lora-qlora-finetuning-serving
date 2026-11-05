@@ -625,6 +625,7 @@ def _base_config(*, name: str, quant: str | None, flavor: str = "27B", seq_len: 
                  seqs_per_rank: int = 2, steps: int = 150, lr: float = 2e-4, rank: int = 16,
                  alpha: float = 32.0, hf_path: str | None = QWEN38_27B_HF,
                  data_path: str | None = None) -> TPUTrainerConfig:
+    steps = int(os.environ.get("LORA_FT_STEPS", steps))  # optional override for short measurement runs
     _RUN.update({"config": name, "quant": quant, "rank": rank, "alpha": alpha, "targets": list(LORA_TARGETS_TT),
                  "skip_frozen_init": hf_path is not None and os.environ.get("LORA_FT_SKIP_FROZEN_INIT", "0") == "1"})
     _install_patches()
